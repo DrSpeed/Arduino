@@ -23,8 +23,13 @@ char *  audioFileTypes[] = {".mp3", ".m4a", ".mid"};
 int nMusicFiles;
 char **allMusicFiles;
 
-int nDirs;
-char **allDirs;
+// Where we are at in the filesystem
+int nDirs;  // in filesystem
+int curDir;
+char *dirName = 0x0;
+int curSong; // in folder
+char *songName = 0x0;
+int nSongs; // in folder
 
 void serialPrint(char *fmt, ... ){
         char tmp[128]; // resulting string limited to 128 chars
@@ -56,44 +61,58 @@ void setup()
   Serial.println(F("Lilypad MP3 Player sketch, vol(A0) down-->Pause, (A4)button-->advance"));
   
   //--- Initialize the SD card; SS = pin 9, half speed at first-------
-  Serial.print(F("initialize SD card... "));
+  //  Serial.print(F("initialize SD card... "));
   result = sd.begin(SD_CS, SPI_HALF_SPEED); // 1 for success
   if (result != 1) // Problem initializing the SD card
   {
-    Serial.print(F("error, halting (missing card?)"));
+    //    Serial.print(F("error, halting (missing card?)"));
     errorBlink(1); // Halt forever, blink LED if present.
   }
   else
-    Serial.println(F("success!"));
+    //    Serial.println(F("success!"));
 
   //---Start up the MP3 library---------------------------
-  Serial.print(F("initialize MP3 chip... "));
+    //  Serial.print(F("initialize MP3 chip... "));
   result = MP3player.begin(); // 0 or 6 for success
   // Check the result, see the library readme for error codes.
   if ((result != 0) && (result != 6)) // Problem starting up
   {
-      Serial.print(F("error code "));
-      Serial.print(result);
-      Serial.print(F(", halting."));
-      errorBlink(result); // Halt forever, blink red LED if present.
+    Serial.print(F("error code "));
+    Serial.print(result);
+    Serial.print(F(", halting."));
+    errorBlink(result); // Halt forever, blink red LED if present.
   }
   else
     Serial.println(F("success!"));
 
-  // Read the SD Card for audio files
-  Serial.print(F("Collecting audio files... "));
-  if (collectSongs() != true){
-      Serial.print(F("Error collecting audio files (no files)."));
-      Serial.print(F(", halting."));
-      errorBlink(result); // Halt forever, blink red LED if present.
-  }
 
   // Set the VS1053 volume. 0 is loudest, 255 is lowest (off):
   MP3player.setVolume(10,10);
+
+  countDirectories();
+  curDir = 0; // start at begining
+  getDirectoryName();
+  countSongs();
+  Serial.print("Dir:");
+  Serial.println(dirName);
+  getSong();
   
   // Turn on the amplifier chip:
   digitalWrite(EN_GPIO1,HIGH);
   delay(2);
+
+  String d = dirName;
+  String trackName =  String(d + "/" + songName);  // Concatenate to get full filename
+  Serial.print("playing: ");
+  Serial.println(trackName);
+
+  char buf[64];
+  trackName.toCharArray(buf, trackName.length() + 1);
+
+
+  result = MP3player.playMP3(buf);
+  // sjw: check result here?
+
 }
 
 int currentVolume = -1;
@@ -130,32 +149,41 @@ void loop()
 
   if (!MP3player.isPlaying() || advance)
     {
-      Serial.print(F("Starting track"));
-      Serial.println(tracknum);
-
-      char * trackname = *(allMusicFiles + tracknum);
-
-      byte result = MP3player.playMP3(trackname);
-
       Serial.println("setting up next track");
-      // Next track
-      if (tracknum >= nMusicFiles){
-	tracknum = 0;
-      } else {
-	tracknum ++;
+      if (curSong < (nSongs-1)){
+	curSong++;
+      } else {  // different folder
+	if (curDir < (nDirs - 1)){
+	  curDir++;
+	} else {
+	  curDir = 0;
+	}
+	curSong = 0;
+	getDirectoryName();
       }
 
+      serialPrint("curSong: %d", curSong);
+      getSong(); // always need a new song
+
+      char buf[64];
+      String d = dirName;
+
+      // Concatenate to get full filename
+      String trackName =  String(d + "/" + songName);  
+      trackName.toCharArray(buf, trackName.length() + 1);
+
+      byte result = MP3player.playMP3(buf);
       if(result != 0)
 	{
 	  Serial.print(F("error "));
 	  Serial.print(result);
 	  Serial.print(F(" when trying to play track "));
-	  Serial.println(trackname);
+	  Serial.println(buf);
 	}
       else
 	{
 	  Serial.print(F("playing "));
-	  Serial.println(trackname);
+	  Serial.println(buf);
 	}
       //      MP3player.stopTrack();
     }
@@ -187,7 +215,9 @@ void errorBlink(int blinks)
   }
 }
 
-int countDirectories(SdFile file){
+/* set global */
+void countDirectories(){
+  SdFile file;
   sd.chdir("/",true);
   int count = 0;
   while (file.openNext(sd.vwd(),O_READ))
@@ -197,32 +227,96 @@ int countDirectories(SdFile file){
       }
       file.close();
     }
-  return count;
+  nDirs = count;
+  serialPrint("#dirs: %d\n", nDirs); 
+}
+
+void getDirectoryName()
+{
+  SdFile file;
+  sd.chdir("/",true);
+  int count = 0;
+  while (file.openNext(sd.vwd(),O_READ))
+    {
+      if (file.isDir()) {
+	if (count == curDir){  // This is the dir we want
+	  if (dirName != 0x0){
+	    free(dirName);  // clean up old one
+	  }
+	  char tempfilename[13];
+	  file.getFilename(tempfilename);
+	  // set global
+	  dirName = (char *) malloc(  (unsigned int)( (sizeof(char) * strlen(tempfilename)) + 1));
+	  strcpy(dirName, tempfilename);
+	  file.close();
+	  return;
+	}
+	count++;
+      }
+      file.close();
+    }
+}
+
+void countSongs(){
+  SdFile file;
+
+  sd.chdir(dirName, true);
+
+  int count = 0;
+  while (file.openNext(sd.vwd(),O_READ))
+    {
+      if (!file.isDir()){
+	char tempfilename[13];
+	file.getFilename(tempfilename);    // get filename
+	if (isMusicFile(tempfilename))
+	  {
+	    serialPrint("Found audio file: %s\n", tempfilename);
+	    count++;
+	  }
+      }
+      file.close();
+    }
+  sd.chdir("/", true);
+  
+  serialPrint("nSongs: %d\n", nSongs);
+  nSongs = count;
 }
 
 
-void populateDirectories(SdFile file, char** allDirNames, int nDirs){
-
-  char tempfilename[13];
-  sd.chdir("/",true);
+/*
+ * Update the global with the name of the song at curSong index
+ */
+void getSong()
+{
+  SdFile file;
+  sd.chdir(dirName, true);
   int count = 0;
 
+  serialPrint("gettings song: %d\n", curSong);
   while (file.openNext(sd.vwd(),O_READ))
     {
-      file.getFilename(tempfilename);    // get filename
-      if (file.isDir())
-	{
-	  char *allocd = (char *) malloc(  (unsigned int)( (sizeof(char) * strlen(tempfilename)) + 1));
-	  
-	  strcpy(allocd, tempfilename);
+      if (!file.isDir()){
+	char tempfilename[13];
+	file.getFilename(tempfilename);    // get filename
+	if (isMusicFile(tempfilename)){
+	  serialPrint("checking for #%d song: %s\n", count, tempfilename);
+	  if (count == curSong){  // This is the dir we want
+	    if (songName != 0x0){
+	      free(songName);  // clean up old one
+	    }
+	    songName = (char *) malloc(  (unsigned int)( (sizeof(char) * strlen(tempfilename)) + 1));
+	    strcpy(songName, tempfilename);
+	    file.close();
+	    sd.chdir("/", true);
+	    return;
+	  }
+	  count++;
 
-	  Serial.print(F("Collecting directory name file:"));
-	  Serial.println(allocd);
-	  *allDirNames = allocd;
-	  allDirNames ++;
-	}
+	} // is song
+      } // is dir
       file.close();
     }
+  sd.chdir("/", true);
 }
 
 
@@ -249,115 +343,11 @@ bool isMusicFile(char *filename)
 }
 
 
-int countMusicFiles(char * directory,  SdFile file){
+int freeRam () {
+  extern int __heap_start, *__brkval; 
+  int v; 
+  int fr = (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
+  Serial.print("Free ram: ");
+  Serial.println(fr);
 
-  char tempfilename[13];
-  sd.chdir(directory, true);
-
-  int count = 0;
-  while (file.openNext(sd.vwd(),O_READ))
-    {
-      file.getFilename(tempfilename);    // get filename
-
-     if (!file.isDir()) {
-       if (isMusicFile(tempfilename))
-	 {
-	   serialPrint("Found audio file: %s\n", tempfilename);
-	   count++;
-	 }
-       else
-	 {
-	   serialPrint("Found NON audio file: %s\n", tempfilename);
-	 }
-     }
-     file.close();
-    }
-  sd.chdir("/", true);
-  return count;
 }
-
-
-/*
- * Add the music files from the supplied directory, return the pointer to the next 
- * location.
- */
-char ** populateAllMusicFiles(char * dir, SdFile file, char** allMusicFiles){
-  char tempfilename[13];
-
-  Serial.print(F("Collecting files..."));
-  Serial.println(dir);
-
-  sd.chdir(dir, true);
-  int count = 0;
-  while (file.openNext(sd.vwd(),O_READ))
-    {
-      file.getFilename(tempfilename);    // get filename
-      if (!file.isDir() && isMusicFile(tempfilename))
-	{
-	  String d = dir;
-	  String str  =  String(d + "/" + tempfilename);  // Concatenate to get full filename
-	  //	  char *allocd = (char *) malloc(  (unsigned int)( (sizeof(char) * strlen(tempfilename)) + 1));
-	  char *allocd = (char *) malloc(  (unsigned int)( (sizeof(char) * str.length()) + 1));
-	  
-	  str.toCharArray(allocd, str.length() + 1); // Put string into space allocated 
-	  *allMusicFiles = allocd;   // Add pointer to string memory
-	  allMusicFiles ++;  //Increment array pointer to next spot
-
-	  serialPrint("Collected sound file: %s\n", allocd);
-	  count++;
-	}
-      file.close();
-    }
-
-  serialPrint("Collected %d Files.", count);  
-
-  // go back to root (IMPORTANT)
-  sd.chdir("/", true);
-
-  return allMusicFiles;
-}
-
-
-/*
- * Scan all the first level folders for audio files and add the files to 
- * a set of char pointers.
- * Songs have the directory name in them without leading slash
- *  e.g.:  music/rock_on.mp3
- * Returns TRUE if we found some files.
- */
-bool collectSongs() {
-  SdFile file;
-  
-  nDirs = countDirectories(file);
-  serialPrint("Found %d directories\n", nDirs);
-
-  allDirs = (char **)malloc(sizeof(char*) * nDirs);
-  populateDirectories(file, allDirs, nDirs);
-
-  // Now that we know all the directories, get the number of audio files
-  for (int i=0; i<nDirs; i++){
-    char *dirname = *(allDirs + i);
-    Serial.print("Directory:");
-    Serial.println(dirname);
-    nMusicFiles += countMusicFiles(dirname,  file);
-  }
-  serialPrint("Found %d music files\n", nMusicFiles);
-
-  // allocate list of song pointers, song strings themselves
-  // are allocated elsewhere
-  allMusicFiles = (char **)malloc(sizeof(char*) * nMusicFiles);
-  Serial.println("Allocated memory for audio filenames.");  
-
-  // Put all the audio files into a list of char pointers
-  char ** curSong = allMusicFiles;
-  for (int i=0; i<nDirs; i++){
-    char *fn = *(allDirs + i);
-    String dirname = fn; 
-    curSong = populateAllMusicFiles(fn, file, curSong);
-  }
-
-  return (nMusicFiles != 0);
-}
-
-
-
