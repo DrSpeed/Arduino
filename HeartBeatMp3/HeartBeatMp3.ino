@@ -7,7 +7,6 @@
 
 
 // And a few outputs we'll be using:
-
 const int ROT_LEDR = 10; // Red LED in rotary encoder (optional)
 const int EN_GPIO1 = A2; // Amp enable + MIDI/MP3 mode select
 const int SD_CS = 9;     // Chip Select for SD card
