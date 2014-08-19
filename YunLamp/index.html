@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<head>
+
+<style>
+.button {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;   
+  padding:10px;
+  background-color: #555555;
+  border: 1px solid #DDDDDD;
+  border-radius:  3px;
+  color:#EEEEEE;
+  text-decoration:none;
+}
+div {
+    border: 2px solid;
+    color: #DDDDDD;
+    border-radius:  5px;
+    padding-top:    5px;
+    padding-bottom: 5px;
+    padding-right:  5px;
+    padding-left:   5px;
+}
+body {
+    background-color: #202020;
+} 
+</style>
+
+  <title>IOT NeoPixel</title>
+
+  <meta name="viewport" content="width=device-width; initial-scale=1.0; maximum-scale=1.0;">
+
+  <script type="text/javascript" src="zepto.min.js"></script>
+
+  <script type="text/javascript">
+
+    // Assign functions to all the controls on the page
+    $(document).ready(function(){
+
+    $('#glowBrButton').click(function(){
+    $('#content').load('/arduino/bright/10');
+    });
+
+    $('#dimBrButton').click(function(){
+    $('#content').load('/arduino/bright/25');
+    });
+
+    $('#medBrButton').click(function(){
+    $('#content').load('/arduino/bright/66');
+    });
+
+    $('#fullBrButton').click(function(){
+    $('#content').load('/arduino/bright/100');
+    });
+
+    $('#lowRanButton').click(function(){
+    $('#content').load('/arduino/randomize/10');
+    });
+
+    $('#medRanButton').click(function(){
+    $('#content').load('/arduino/randomize/50');
+    });
+
+    $('#highRanButton').click(function(){
+    $('#content').load('/arduino/randomize/100');
+    });
+
+
+    $('#noAniButton').click(function(){
+    $('#content').load('/arduino/animate/0');
+    });
+    $('#lowAniButton').click(function(){
+    $('#content').load('/arduino/animate/1000');
+    });
+    $('#medAniButton').click(function(){
+    $('#content').load('/arduino/animate/500');
+    });
+    $('#highAniButton').click(function(){
+    $('#content').load('/arduino/animate/100');
+    });
+
+    $('#toggleOnButton').click(function(){
+    $('#content').load('/arduino/toggleon/1');
+    });
+
+    $('#noSkipButton').click(function(){
+    $('#content').load('/arduino/skip/0');
+    });
+    $('#oneSkipButton').click(function(){
+    $('#content').load('/arduino/skip/1');
+    });
+    $('#threeSkipButton').click(function(){
+    $('#content').load('/arduino/skip/3');
+    });
+    $('#fiveSkipButton').click(function(){
+    $('#content').load('/arduino/skip/5');
+    });
+
+    $('#sleep0Button').click(function(){
+    $('#content').load('/arduino/sleep/0');
+    });
+    $('#sleep1Button').click(function(){
+    $('#content').load('/arduino/sleep/1');
+    });
+    $('#sleep60Button').click(function(){
+    $('#content').load('/arduino/sleep/60');
+    });
+    $('#sleep90Button').click(function(){
+    $('#content').load('/arduino/sleep/90');
+    });
+
+
+    $('#statusButton').click(function(){
+    $('#content').load('/arduino/status/0');
+    });
+
+
+    // Assign functions to the table cells
+    var tbl = document.getElementById("COLOR_TABLE");
+    if (tbl != null) {
+       for (var i = 0; i < tbl.rows.length; i++) {
+          for (var j = 0; j < tbl.rows[i].cells.length; j++)
+             tbl.rows[i].cells[j].onclick = function () 
+                { 
+                   var restUrl = "/arduino/color/";
+		   var fullUrl = restUrl.concat(this.innerHTML);	      
+                   $('#content').load(fullUrl);
+                };
+            }
+        }
+    });
+    </script>
+
+</head>
+<body>
+<div>
+<font face="Verdana">
+
+<table border="0" BORDERCOLOR="111111"  id="COLOR_TABLE"  style="width:275px">
+  <tr style="height:50px">
+  <td bgcolor="#F6E121">F6E121</td>
+  <td bgcolor="#CC0099">CC0099</td>
+  <td bgcolor="#009900">009900</td>
+  <td bgcolor="#0000FF">0000FF</td>
+  </tr>
+  <tr style="height:50px">
+  <td bgcolor="#00FFFF">00FFFF</td>
+  <td bgcolor="#669999">669999</td>
+  <td bgcolor="#CC3300">CC3300</td>
+  <td bgcolor="#660033">660033</td>
+  </tr>
+  <tr style="height:50px">
+  <td bgcolor="#87760B">87760B</td>
+  <td bgcolor="#FCBEBE">FCBEBE</td>
+  <td bgcolor="#FF6600">FF6600</td>
+  <td bgcolor="#FCFAD0">FCFAD0</td>
+  </tr>
+</table>  
+Brightness<br>
+  <input class="button" type="button" value="Glow"   id="glowBrButton" >
+  <input class="button" type="button" value="Dim"    id="dimBrButton" >
+  <input class="button" type="button" value="Medium" id="medBrButton" >
+  <input class="button" type="button" value="Bright" id="fullBrButton" >
+<br>
+Randomize<br>
+  <input class="button" type="button" value="Low"    id="lowRanButton" >
+  <input class="button" type="button" value="Medium" id="medRanButton" >
+  <input class="button" type="button" value="High"   id="highRanButton" >
+<br>
+Animate<br>
+  <input class="button" type="button" value="Off"    id="noAniButton" >
+  <input class="button" type="button" value="Low"    id="lowAniButton" >
+  <input class="button" type="button" value="Medium" id="medAniButton" >
+  <input class="button" type="button" value="High"   id="highAniButton" >
+<br>
+Skip<br>
+  <input class="button" type="button" value="Off"    id="noSkipButton" >
+  <input class="button" type="button" value="One"    id="oneSkipButton" >
+  <input class="button" type="button" value="Three"  id="threeSkipButton" >
+  <input class="button" type="button" value="Five"   id="fiveSkipButton" >
+<br>
+Sleep<br>
+  <input class="button" type="button" value="Off"     id="sleep0Button" >
+  <input class="button" type="button" value="1 Min"   id="sleep1Button" >
+  <input class="button" type="button" value="1 Hour"  id="sleep60Button" >
+  <input class="button" type="button" value="90 Min"  id="sleep90pButton" >
+<br>
+Misc.<br>
+  <input class="button" type="button" value="On/Off"  id="toggleOnButton" >
+  <input class="button" type="button" value="Status"  id="statusButton" >
+<br>
+  <span id="content">Text content from arduino service here...</span>
+</font>
+</div>
+</body>
