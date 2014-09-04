@@ -1,47 +1,25 @@
-// Test code for Adafruit GPS modules using MTK3329/MTK3339 driver
+// ========================================================
+//  Arduino MEGA with GPS and Serial LCD
+// =======================================================
+// Works with Adafruit GPS modules using MTK3329/MTK3339 driver
 //
-// This code shows how to listen to the GPS module in an interrupt
+// This code listens to the GPS module in an interrupt
 // which allows the program to have more 'freedom' - just parse
 // when a new NMEA sentence is available! Then access data when
 // desired.
-//
-// Tested and works great with the Adafruit Ultimate GPS module
-// using MTK33x9 chipset
-//    ------> http://www.adafruit.com/products/746
-// Pick one up today at the Adafruit electronics shop 
-// and help support open source hardware & software! -ada
+
 
 #include <Adafruit_GPS.h>
 #include <SoftwareSerial.h>
 #include <math.h>
 
-// If you're using a GPS module:
-// Connect the GPS Power pin to 5V
-// Connect the GPS Ground pin to ground
-// If using software serial (sketch example default):
-//   Connect the GPS TX (transmit) pin to Digital 3
-//   Connect the GPS RX (receive) pin to Digital 2
-// If using hardware serial (e.g. Arduino Mega):
-//   Connect the GPS TX (transmit) pin to Arduino RX1, RX2 or RX3
-//   Connect the GPS RX (receive) pin to matching TX1, TX2 or TX3
+// There are 3 serial ports in this project
+// 1) USB serial[0]  2) gpsSerial[1]  3) LCD Serial[2]
 
-// If you're using the Adafruit GPS shield, change 
-// SoftwareSerial mySerial(3, 2); -> SoftwareSerial mySerial(8, 7);
-// and make sure the switch is set to SoftSerial
-
-// If using software serial, keep this line enabled
-// (you can change the pin numbers to match your wiring):
-//SoftwareSerial mySerial(3, 2);
-
-// If using hardware serial (e.g. Arduino Mega), comment out the
-// above SoftwareSerial line, and enable this line instead
-// (you can change the Serial number to match your wiring):
-
-HardwareSerial mySerial = Serial1;
+HardwareSerial gpsSerial  = Serial1;
 HardwareSerial lcdSerial = Serial2;
 
-Adafruit_GPS GPS(&mySerial);
-
+Adafruit_GPS GPS(&gpsSerial);
 
 // Set GPSECHO to 'false' to turn off echoing the GPS data to the Serial console
 // Set to 'true' if you want to debug and listen to the raw GPS sentences. 
@@ -50,23 +28,24 @@ Adafruit_GPS GPS(&mySerial);
 // this keeps track of whether we're using the interrupt
 // off by default!
 boolean usingInterrupt = false;
-void useInterrupt(boolean); // Func prototype keeps Arduino 0023 happy
+
+//--LCD state data---------------------------
 
 unsigned long timeToUpdate = 0;
 #define UPDATE_INTERVAL 2000
 
 boolean fix = false;
-float altitude = 0.0;
-float latitude, longitude;
-char  latOrient, lonOrient;
-int nSats = 0;
-int infoPage = 0;
-int nInfoPages = 4;
-String timeDisplay;
-String timeDisplayHeader = "Time:";
-String dateDisplay;
-String dateDisplayHeader = "Date:";
-int speed=0;
+float   altitude = 0.0;
+float   latitude, longitude;
+char    latOrient, lonOrient;
+int     nSats = 0;
+int     infoPage = 0;
+int     nInfoPages = 4;
+String  timeDisplay;
+String  timeDisplayHeader = "Time:";
+String  dateDisplay;
+String  dateDisplayHeader = "Date:";
+int     speed=0;
 
 void setup()  
 {
@@ -74,7 +53,7 @@ void setup()
   // connect at 115200 so we can read the GPS fast enough and echo without dropping chars
   // also spit it out
   Serial.begin(115200);
-  Serial.println("Adafruit GPS library basic test!");
+  Serial.println("Arduino GPS program setup...");
 
   lcdSerial.begin(9600);
 
@@ -109,7 +88,7 @@ void setup()
 
   delay(1000);
   // Ask for firmware version
-  mySerial.println(PMTK_Q_RELEASE);
+  gpsSerial.println(PMTK_Q_RELEASE);
 }
 
 
@@ -175,30 +154,29 @@ void loop()                     // run over and over again
     Serial.print(GPS.minute, DEC); Serial.print(':');
     Serial.print(GPS.seconds, DEC); Serial.print('.');
     Serial.println(GPS.milliseconds);
-
-    timeDisplay = timeDisplayHeader +  GPS.hour + ':' + GPS.minute + ':' + GPS.seconds;
-
     Serial.print("Date: ");
     Serial.print(GPS.day, DEC); Serial.print('/');
     Serial.print(GPS.month, DEC); Serial.print("/20");
     Serial.println(GPS.year, DEC);
-
-    dateDisplay = dateDisplayHeader +  GPS.day + '/' + GPS.month + '/' + "20" + GPS.year;
-
     Serial.print("Fix: "); Serial.print((int)GPS.fix);
-
+    Serial.print(" quality: "); Serial.println((int)GPS.fixquality); 
+    
+    // cache data for LCD
+    timeDisplay = timeDisplayHeader +  GPS.hour + ':' + GPS.minute + ':' + GPS.seconds;
+    dateDisplay = dateDisplayHeader +  GPS.day + '/' + GPS.month + '/' + "20" + GPS.year;
     fix = GPS.fix;
 
-    Serial.print(" quality: "); Serial.println((int)GPS.fixquality); 
     if (GPS.fix) {
+      // cache data for LCD
       latOrient  = GPS.lat;
-      lonOrient = GPS.lon;
-      latitude = convertDegMinToDecDeg(GPS.latitude);
-      longitude = convertDegMinToDecDeg(GPS.longitude);
-      nSats = (int)GPS.satellites;
-      speed = GPS.speed;
-      altitude = GPS.altitude;
+      lonOrient  = GPS.lon;
+      latitude   = convertDegMinToDecDeg(GPS.latitude); // Convert to a useful format
+      longitude  = convertDegMinToDecDeg(GPS.longitude);
+      nSats      = (int)GPS.satellites;
+      speed      = GPS.speed;
+      altitude   = GPS.altitude;
 
+      // Push GPS data to serial (back to PC/MAC)
       Serial.print("Location (DDMM.MMMM): ");
       Serial.print(GPS.latitude, 4); Serial.print(GPS.lat);
       Serial.print(", "); 
