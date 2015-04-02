@@ -32,7 +32,8 @@ boolean usingInterrupt = false;
 //--LCD state data---------------------------
 
 unsigned long timeToUpdate = 0;
-#define UPDATE_INTERVAL 2000
+#define UI_UPDATE_INTERVAL 3000
+#define GPS_UPDATE_INTERVAL 2000
 
 boolean fix = false;
 float   altitude = 0.0;
@@ -202,7 +203,7 @@ void updateLCD(){
   unsigned long now = millis();
 
   if (now > timeToUpdate){
-    timeToUpdate += UPDATE_INTERVAL;
+    timeToUpdate += UI_UPDATE_INTERVAL;
 
     clearLCD();
     selectLineOne();
