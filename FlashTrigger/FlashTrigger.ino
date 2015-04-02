@@ -2,6 +2,7 @@
  * swdba's board:  Duemilanova w.ATMega 328
  */
 
+
 #define MIC_PIN  A5
 #define KNOB_PIN A4
 #define LED_PIN  13
