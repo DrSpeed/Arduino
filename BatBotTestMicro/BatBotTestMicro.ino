@@ -1,3 +1,12 @@
+/*
+ * This is the code for the Arduino Micro w/accel., neopixel and VS1053
+ * The MISO/MOSI/CLK pins are different on the micro from mego or uno.
+ *
+ * This code assumes (hardcoded) a couple wav files on SD card 9.wav, 10.wav.
+ *  tHE VS1053 likes MP3s better than WAVs. Use Audacity, load all and 
+ *  do a export multiple
+ */
+
 #include <Wire.h>
 #include <math.h>
 #include <SPI.h>
@@ -8,6 +17,8 @@
 #include <Adafruit_LSM303_U.h>
 #include <Adafruit_NeoPixel.h>
 
+
+#define LED_PIN 13
 
 //---AUDIO PLAYER-------------------------------------------
 #define CLK  9 // SPI Clock, shared with SD card
@@ -26,6 +37,9 @@ bool connectedToAudioPlayer = false;
 int volume =0; //keeper of the volume, if the analog input changes we update the device 
 #define VOL_KNOB  A0
 
+// Force to trigger sound
+#define SOUND_THRESH_1 20   // 2 m/Sec
+#define SOUND_THRESH_2 80   // 8 m/Sec -just under a G
 
 //------ NEOPIXEL STUFF---------------------------------------------
 #define NEOPIXEL_DIGIAL_PIN 5
@@ -45,11 +59,12 @@ Adafruit_LSM303_Accel_Unified accel = Adafruit_LSM303_Accel_Unified(54321);
 
 int historicForce = 0;
 #define FORCE_DECAY  5 // arbituary value to scale brightness over time (fade out)
+#define GRAVITY_SCALED  98  // Gravity is 9.8 meters/second we keep it scaled by 10
 
 
 /*
-void displaySensorDetails(void)
-{
+  void displaySensorDetails(void)
+  {
   sensor_t sensor;
   accel.getSensor(&sensor);
   Serial.println("------------------------------------");
@@ -62,21 +77,23 @@ void displaySensorDetails(void)
   Serial.println("------------------------------------");
   Serial.println("");
   delay(500);
-}
+  }
 */
 
+//  -- SETUP --
 void setup(void) 
 {
   // Debugging console
   Serial.begin(9600);
-  
+  pinMode(LED_PIN, OUTPUT);   // LED PIN
+
   /* Initialise the sensor */
   if(!accel.begin())
-  {
-    /* There was a problem detecting the ADXL345 ... check your connections */
-    Serial.println("Ooops, no LSM303 detected ... Check your wiring!");
-    while(1);
-  }
+    {
+      /* There was a problem detecting the ADXL345 ... check your connections */
+      Serial.println("Ooops, no LSM303 detected ... Check your wiring!");
+      while(1);
+    }
   
   /* Display some basic information on this sensor */
   //displaySensorDetails();
@@ -112,10 +129,41 @@ void initializeSound(){
 }
 
 
-// Force to trigger sound
-#define SOUND_THRESH_1 20   
-#define SOUND_THRESH_2 80   
+/*
+ * This code chooses what file to play when robot is stationary.
+ * There is a folder on the SD card with files named 1.mp3 ... 50.mp3
+ * we randomly choose one.
+ */ 
+#define N_SAMPLES     50
+#define RANDOM_FILES_FOLDER "/wavs/"
+#define MP3_SUFFIX    ".mp3"
 
+int lastSample = -1;  // Keep track of the last one so we never play the same one twice
+
+String getFile(){
+  
+  int x = random(1, N_SAMPLES);
+  while (x == lastSample){  // no dups
+    x = random(1, N_SAMPLES);  // try again
+  }
+  lastSample = x; // update variable
+
+  String s = String(RANDOM_FILES_FOLDER);
+  s += String(x);
+  s += MP3_SUFFIX;
+  
+  return s;
+}
+
+
+long nextRandomTime = 4000;
+boolean playingRandomSample = false;
+
+//  Bracket time for random sample playback in millisec
+#define RAND_MIN 10000
+#define RAND_MAX 15000
+
+// -- LOOP --
 void loop(void) 
 {
   /* Get a new sensor event */ 
@@ -124,53 +172,90 @@ void loop(void)
  
   /* Display the results (acceleration is measured in m/s^2) */
   /*
-  Serial.print("X: "); Serial.print(event.acceleration.x); Serial.print("  ");Serial.println("m/s^2 ");
-  Serial.print("Y: "); Serial.print(event.acceleration.y); Serial.print("  ");Serial.println("m/s^2 ");
-  Serial.print("Z: "); Serial.print(event.acceleration.z); Serial.print("  ");Serial.println("m/s^2 ");
+    Serial.print("X: "); Serial.print(event.acceleration.x); Serial.print("  ");Serial.println("m/s^2 ");
+    Serial.print("Y: "); Serial.print(event.acceleration.y); Serial.print("  ");Serial.println("m/s^2 ");
+    Serial.print("Z: "); Serial.print(event.acceleration.z); Serial.print("  ");Serial.println("m/s^2 ");
   */
 
+  // Accelerometer for in meters/sec
   float xSqr = event.acceleration.x * event.acceleration.x;
   float ySqr = event.acceleration.y * event.acceleration.y;
-  float zSqr = event.acceleration.z * event.acceleration.z;
+  float zSqr = event.acceleration.z * event.acceleration.z;  
 
+  // Sum and normalize the vectors
   long fBang = sqrt( (double)(xSqr + ySqr + zSqr) );
 
   int bang = round(fBang * 10.0);  // increase sensitivty, scale int
-  bang -= 90; // remove gravity
+  
+  // Cancel out gravity. There will ALWAYS be gravity for on the chip
+  bang -= GRAVITY_SCALED;
 
   bang = min(bang, MAX_FORCE); // clamp
 
-  if (bang > 0){
-    Serial.print("Bang: ");
-    Serial.println(bang);
-  }
   
   if (bang > historicForce){
     historicForce = bang;
   } else {
     historicForce -= FORCE_DECAY;
- }
+  }
 
   // Do neopixels
   setRing(historicForce);
 
-  if (bang >  SOUND_THRESH_1){
-    if (connectedToAudioPlayer){
-      Serial.println("Playing sound");
+  if (connectedToAudioPlayer){
 
-      if (musicPlayer.stopped())
+    if (bang >  SOUND_THRESH_1){  // play a bang sound
 
+      if (playingRandomSample){ // a bang stops random sample
+	musicPlayer.stopPlaying();
+	playingRandomSample = false;
+      }
+
+      if (musicPlayer.stopped()){  // If we're already playing bang sound, keep it going
+
+	digitalWrite(LED_PIN, HIGH);   // turn the LED on
 	if (bang >= SOUND_THRESH_2){
 	  musicPlayer.startPlayingFile("10.wav");
 	} else {
 	  musicPlayer.startPlayingFile("9.wav");
 	}
-    } else {
-      Serial.println("No sound player");
+	digitalWrite(LED_PIN, LOW);   // turn the LED on
+      }
+    } else {  // check to see if we should play some random sound
+      manageAmbientSounds();
     }
+  }else {
+    Serial.println("No sound player");
   }
   manageVolume();
   delay(10); // maybe even faster?
+}
+
+void manageAmbientSounds(){
+  // we're not already playing a ran
+  if (musicPlayer.stopped()  &&  (nextRandomTime <= millis())){
+    //Serial.println("Playing random sound");
+    digitalWrite(LED_PIN, HIGH);   // turn the LED on
+    playRandom();
+    playingRandomSample = true;  // what we're playing is not important
+    nextRandomTime = millis() + random(RAND_MIN, RAND_MAX);
+    digitalWrite(LED_PIN, LOW);    // turn the LED off
+  }
+}
+
+
+void playRandom(){
+  // GET A RANDOM FILE
+  String str = getFile();
+  int str_len = str.length() + 1; 
+
+  // Prepare the character array (the buffer) 
+  char char_array[str_len];
+
+  // Copy it over 
+  str.toCharArray(char_array, str_len);
+
+  musicPlayer.startPlayingFile(char_array);
 }
 
 
@@ -195,13 +280,13 @@ void setRing(int force){
 // The colours are a transition r - g - b - back to r.
 uint32_t Wheel(byte WheelPos) {
   if(WheelPos < 85) {
-   return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+    return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
   } else if(WheelPos < 170) {
-   WheelPos -= 85;
-   return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+    WheelPos -= 85;
+    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
   } else {
-   WheelPos -= 170;
-   return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+    WheelPos -= 170;
+    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
   }
 }
 
@@ -217,9 +302,12 @@ void manageVolume(){
     volume = curVol;
     musicPlayer.setVolume(volume, volume);
     /*
-    Serial.print("Volume ");
-    Serial.println(volume);
+      Serial.print("Volume ");
+      Serial.println(volume);
     */
   }
 
 }
+
+
+
